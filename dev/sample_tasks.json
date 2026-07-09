@@ -1,0 +1,10 @@
+[
+  {"task_id": "s1", "prompt": "Explain how photosynthesis works."},
+  {"task_id": "s2", "prompt": "If a shirt costs $40 and is discounted by 25%, calculate the final price."},
+  {"task_id": "s3", "prompt": "Classify the sentiment of this review as positive or negative: I loved this product!"},
+  {"task_id": "s4", "prompt": "Summarise the following text in one sentence: The quick brown fox jumps over the lazy dog repeatedly during the afternoon."},
+  {"task_id": "s5", "prompt": "Extract the named entities from this text: Tim Cook leads Apple in Cupertino, California."},
+  {"task_id": "s6", "prompt": "This function has a bug:\n```python\ndef add(a, b):\n    return a - b\n```\nFind and fix it."},
+  {"task_id": "s7", "prompt": "Solve this logic puzzle: all of the following must be true. Alice is not next to Bob. Who sits where?"},
+  {"task_id": "s8", "prompt": "Write a function that returns the nth Fibonacci number."}
+]

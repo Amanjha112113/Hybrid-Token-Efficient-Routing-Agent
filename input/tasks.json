@@ -1,0 +1,10 @@
+[
+  {"task_id":"f1","prompt":"Explain what a black hole is in one sentence."},
+  {"task_id":"m1","prompt":"If a shirt costs $40 after a 20% discount, what was the original price?"},
+  {"task_id":"s1","prompt":"Classify the sentiment of this review and explain why: 'The product arrived broken and support was rude.'"},
+  {"task_id":"sum1","prompt":"Summarize the following in exactly one sentence: The Industrial Revolution was a period of global transition of human economy towards more widespread, efficient and stable manufacturing processes that succeeded the Agricultural Revolution, starting from Great Britain, continental Europe, and the United States, that occurred during the period from around 1760 to about 1820-1840."},
+  {"task_id":"ner1","prompt":"Extract all persons, organizations, and locations from: 'Elon Musk founded SpaceX in Hawthorne, California.'"},
+  {"task_id":"cd1","prompt":"Debug the following Python code:\ndef add(a, b):\n  return a - b\n# It should add two numbers"},
+  {"task_id":"log1","prompt":"Alex, Blake, and Casey are in a race. Alex finished before Blake. Casey finished before Alex. Who won?"},
+  {"task_id":"cg1","prompt":"Write a Python function that takes a list of integers and returns only the even ones."}
+]

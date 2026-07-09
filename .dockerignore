@@ -1,0 +1,10 @@
+dev/
+tests/
+.env
+.git
+.gitignore
+__pycache__/
+*.pyc
+.pytest_cache/
+README.md
+PROJECT_SPEC.md

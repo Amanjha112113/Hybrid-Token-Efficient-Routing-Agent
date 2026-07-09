@@ -1,0 +1,51 @@
+# Maps each capability category to a *starting* tier index into the
+# cost-ordered model list built at runtime from ALLOWED_MODELS.
+#
+# Tier index 0 = cheapest model, higher index = progressively larger/pricier.
+# The actual model IDs are NEVER hardcoded here — only relative tier
+# positions. tier_policy.py resolves these against ALLOWED_MODELS at runtime.
+#
+# Rationale:
+#   - code_debug / code_gen / logic tend to fail outright on very small
+#     models; starting one tier higher is usually cheaper *overall* than
+#     paying for a near-certain cheap-model failure plus an escalation call.
+#   - sentiment / summarisation / NER / math / factual have easily
+#     validated output shapes and cheap models handle them well, so they
+#     always start at the cheapest tier and escalate only on validation
+#     failure.
+
+categories:
+  factual_knowledge:
+    start_tier: 0
+    max_escalations: 1
+  mathematical_reasoning:
+    start_tier: 0
+    max_escalations: 2
+  sentiment_classification:
+    start_tier: 0
+    max_escalations: 1
+  text_summarisation:
+    start_tier: 0
+    max_escalations: 1
+  named_entity_recognition:
+    start_tier: 0
+    max_escalations: 1
+  code_debugging:
+    start_tier: 1
+    max_escalations: 2
+  logical_reasoning:
+    start_tier: 1
+    max_escalations: 2
+  code_generation:
+    start_tier: 1
+    max_escalations: 2
+
+# Global defaults used if a category is somehow unmapped.
+default:
+  start_tier: 0
+  max_escalations: 1
+
+# Sampling parameters per call. Kept conservative to control token spend.
+generation:
+  max_tokens: 600
+  temperature: 0.2
