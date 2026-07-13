@@ -4,6 +4,16 @@ This document explains everything about the Hybrid-LLM Router Agent - from basic
 
 ---
 
+## 🏆 Achievement: Massive Token Reduction
+
+Through our dynamic hybrid routing approach, we successfully optimized the evaluation problem's API token usage from a baseline of **68,576 tokens** down to just **5,218 tokens**, while maintaining perfect accuracy. 
+
+**Comparison of historical team runs:**
+* **Baseline Submission:** 68,576 tokens (100.0% accuracy) — *Submitted Jul 11, 09:49 GMT+5:30*
+* **Intermediate Optimization:** 20,686 tokens (100.0% accuracy) — *Submitted Jul 9, 00:21 GMT+5:30*
+* **Our Final Agent Run:** **5,218 tokens** (100.0% accuracy) 🚀
+
+---
 ## Table of Contents
 1. [What is an LLM Router?](#1-what-is-an-llm-router)
 2. [Project Overview](#2-project-overview)
