@@ -121,6 +121,9 @@ In production, tasks are not processed one-by-one. The agent utilizes Python's `
 ### `category_classifier.py`
 Utilizes microsecond-fast regex patterns to classify incoming tasks into 8 categories. This ensures we don't call an external model for classification, saving 100% of routing tokens.
 
+### `local_model.py`
+Wraps the lightweight `Qwen2.5-1.5B-Instruct` (Q4_K_M quantized GGUF) via `llama-cpp-python`. This local model executes on the CPU within the Docker container to answer straightforward tasks (like Sentiment or NER), effectively offloading work from the paid API without incurring network latency or token costs.
+
 ### `fireworks_client.py`
 An async wrapper around the Fireworks HTTP endpoint. It implements:
 * **Exponential Backoff:** Retries rate-limited (429) or server-side (500+) errors.
@@ -144,7 +147,7 @@ Validates model output correctness:
 To satisfy the grading requirement that all outputs must originate from the Fireworks API:
 
 ```
-[Prompt] ──► [Local Qwen-3B Model] ──► [Produces Answer]
+[Prompt] ──► [Local Qwen-1.5B Model] ──► [Produces Answer]
                                               │
                                               ▼
 [Echo Prompt] ◄────────────────────── [Verify Output]
@@ -154,7 +157,7 @@ To satisfy the grading requirement that all outputs must originate from the Fire
 [Fireworks API] ──► [Official Stamp Log] ──► [Final Results]
 ```
 
-1. The prompt is fed to the local `Qwen2.5-3B-Instruct` model inside the container.
+1. The prompt is fed to the local `Qwen2.5-1.5B-Instruct` model inside the container.
 2. The generated answer is verified locally for formatting.
 3. We wrap the local answer inside an **Echo Prompt**:
    ```python
