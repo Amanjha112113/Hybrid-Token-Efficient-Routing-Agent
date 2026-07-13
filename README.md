@@ -1,4 +1,4 @@
-# Dynamic Hybrid-LLM Router Agent (Track 1)
+# AMD Developer Hackathon — Act II: Dynamic Hybrid-LLM Router Agent (Track 1)
 
 This document explains everything about the Hybrid-LLM Router Agent - from basic concepts to complete system design and execution flows. After reading this, you should understand exactly how tasks flow through the system and how optimization limits are enforced without needing to read the code.
 
