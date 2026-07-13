@@ -2,59 +2,73 @@
 """
 dev/local_eval.py
 
-OFFLINE, DEV-ONLY helper. Not part of the submitted container image
-(excluded via .dockerignore). Use this to sanity-check classification
-and tier routing decisions against a set of sample prompts before you
-build and push the final image — per the guide's suggestion to "run a
-local eval step to check your output quality before submitting."
+Offline, zero-token, zero-network sanity check: for each sample prompt,
+show which category it's classified into and which model tier sequence
+it would use — WITHOUT spending a single real Fireworks call.
 
-This script does NOT call Fireworks by default — it only exercises the
-zero-token classifier + tier policy so you can eyeball routing decisions
-for a batch of sample prompts. Flip CALL_LIVE_API=1 if you want to
-actually hit Fireworks with your own dev credentials (loaded from a
-local .env you create yourself — never commit or ship it).
+This is step 1 of validating your idea before you burn a submission:
+"does my routing logic even point the right prompts at the right tiers?"
+If a factual question shows up starting at tier 1 instead of tier 0, or
+a JS code-gen prompt shows up mis-tiered, you'll see it here for free.
 
 Usage:
-    python3 dev/local_eval.py path/to/sample_tasks.json
-"""
+    python3 dev/local_eval.py dev/sample_tasks.json
+    python3 dev/local_eval.py ../test_tasks.json   # or any tasks.json-shaped file
 
-from __future__ import annotations
+Never shipped in the image — excluded via .dockerignore.
+"""
 
 import json
 import os
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.category_classifier import classify_prompt
 from src.tier_policy import TierPolicy
 
+# A fake ALLOWED_MODELS list, just for local eyeballing. Swap in whatever
+# naming convention you think launch day will actually use, to stress-test
+# the cheapest-to-most-expensive ordering heuristic before it matters.
+FAKE_ALLOWED_MODELS = [
+    "accounts/fireworks/models/llama-v3p1-8b-instruct",
+    "accounts/fireworks/models/llama-v3p1-70b-instruct",
+    "accounts/fireworks/models/llama-v3p1-405b-instruct",
+    "accounts/fireworks/models/qwen2p5-3b-instruct",
+]
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        print("Usage: python3 dev/local_eval.py path/to/sample_tasks.json")
-        sys.exit(1)
 
-    sample_path = Path(sys.argv[1])
-    tasks = json.loads(sample_path.read_text(encoding="utf-8"))
+def main() -> int:
+    if len(sys.argv) != 2:
+        print(f"Usage: python3 {sys.argv[0]} <path-to-tasks.json>")
+        return 1
 
-    allowed_models_raw = os.environ.get(
-        "ALLOWED_MODELS",
-        "accounts/fireworks/models/llama-v3p1-8b-instruct,"
-        "accounts/fireworks/models/llama-v3p1-70b-instruct,"
-        "accounts/fireworks/models/llama-v3p1-405b-instruct",
-    )
-    allowed_models = [m.strip() for m in allowed_models_raw.split(",") if m.strip()]
-    tier_policy = TierPolicy(allowed_models=allowed_models, config_path="config/tier_mapping.yaml")
+    tasks_path = sys.argv[1]
+    with open(tasks_path, "r", encoding="utf-8") as f:
+        tasks = json.load(f)
 
-    print(f"{'task_id':<10} {'category':<28} {'model_sequence'}")
-    print("-" * 100)
+    tier_policy = TierPolicy(allowed_models=FAKE_ALLOWED_MODELS, config_path="config/tier_mapping.yaml")
+
+    print(f"Model tiers (cheapest -> most expensive), from FAKE_ALLOWED_MODELS:")
+    for i, m in enumerate(tier_policy.ordered_models):
+        print(f"  tier {i}: {m}")
+    print()
+
     for task in tasks:
-        category = classify_prompt(task["prompt"])
+        task_id = task.get("task_id", "?")
+        prompt = task.get("prompt", "")
+        category = classify_prompt(prompt)
         sequence = tier_policy.sequence_for_category(category)
-        print(f"{task['task_id']:<10} {category:<28} {sequence}")
+        gen_params = tier_policy.generation_params(category)
+
+        print(f"[{task_id}] category={category}")
+        print(f"    prompt: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
+        print(f"    tier sequence: {sequence}")
+        print(f"    max_tokens={gen_params['max_tokens']} temperature={gen_params['temperature']}")
+        print()
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

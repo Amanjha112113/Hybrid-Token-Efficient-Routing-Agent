@@ -67,18 +67,22 @@ def load_tasks(input_path: str = "/input/tasks.json") -> List[Task]:
 
     for i, entry in enumerate(data):
         if not isinstance(entry, dict):
-            raise TaskLoadError(f"Task at index {i} is not an object")
+            logger.warning("Task at index %d is not an object — skipping", i)
+            continue
 
         task_id = entry.get("task_id")
         prompt = entry.get("prompt")
 
         if not isinstance(task_id, str) or not task_id.strip():
-            raise TaskLoadError(f"Task at index {i} has missing/invalid 'task_id'")
+            logger.warning("Task at index %d has missing/invalid 'task_id' — skipping", i)
+            continue
         if not isinstance(prompt, str) or not prompt.strip():
-            raise TaskLoadError(f"Task at index {i} ('{task_id}') has missing/invalid 'prompt'")
+            logger.warning("Task at index %d ('%s') has missing/invalid 'prompt' — skipping", i, task_id)
+            continue
 
         if task_id in seen_ids:
-            raise TaskLoadError(f"Duplicate task_id encountered: '{task_id}'")
+            logger.warning("Duplicate task_id encountered: '%s' — skipping duplicate", task_id)
+            continue
         seen_ids.add(task_id)
 
         tasks.append(Task(task_id=task_id, prompt=prompt))

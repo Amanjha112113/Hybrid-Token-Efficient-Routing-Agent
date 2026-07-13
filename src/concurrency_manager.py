@@ -16,7 +16,6 @@ from typing import List, Optional
 
 from src.escalation_controller import TaskResult, process_task
 from src.fireworks_client import FireworksClient
-from src.local_client import LocalClient
 from src.task_loader import Task
 from src.tier_policy import TierPolicy
 
@@ -31,7 +30,6 @@ async def run_all_tasks(
     tier_policy: TierPolicy,
     deadline: float,
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
-    local_client: Optional[LocalClient] = None,
 ) -> List[TaskResult]:
     """
     Execute all tasks concurrently (bounded), returning one TaskResult per
@@ -45,7 +43,8 @@ async def run_all_tasks(
 
     async def _bounded(task: Task) -> TaskResult:
         async with semaphore:
-            if time.monotonic() >= deadline:
+            time_left = deadline - time.monotonic()
+            if time_left <= 0:
                 logger.warning(
                     "Deadline already reached before starting task %s — skipping with empty answer",
                     task.task_id,
@@ -58,7 +57,22 @@ async def run_all_tasks(
                     attempts=0,
                     succeeded_validation=False,
                 )
-            return await process_task(task, client, tier_policy, deadline, local_client)
+            
+            try:
+                return await asyncio.wait_for(
+                    process_task(task, client, tier_policy, deadline),
+                    timeout=time_left
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Task %s timed out at global deadline", task.task_id)
+                return TaskResult(
+                    task_id=task.task_id,
+                    answer="",
+                    category="unknown",
+                    tokens_used=0,
+                    attempts=0,
+                    succeeded_validation=False,
+                )
 
     coroutines = [_bounded(task) for task in tasks]
     results = await asyncio.gather(*coroutines, return_exceptions=True)

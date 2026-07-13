@@ -29,6 +29,7 @@ class CompletionResult:
     text: str
     total_tokens: int
     model: str
+    finish_reason: str
 
 
 class FireworksClient:
@@ -36,7 +37,7 @@ class FireworksClient:
         self,
         api_key: str,
         base_url: str,
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = 120.0,
         max_retries: int = 2,
     ):
         if not api_key:
@@ -62,6 +63,7 @@ class FireworksClient:
         self,
         model: str,
         prompt: str,
+        system_prompt: str = "Answer concisely and precisely.",
         max_tokens: int = 600,
         temperature: float = 0.2,
         deadline: Optional[float] = None,
@@ -78,18 +80,30 @@ class FireworksClient:
 
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
+        if "deepseek" in model.lower() or "kimi" in model.lower():
+            payload["thinking"] = {"type": "disabled"}
 
         last_error: Optional[Exception] = None
         for attempt in range(self._max_retries + 1):
             if deadline is not None and _time_remaining(deadline) <= 0:
                 raise FireworksClientError("Deadline exceeded during retries")
 
+            call_timeout = 120.0
+            if deadline is not None:
+                remaining = _time_remaining(deadline)
+                if remaining <= 0:
+                    raise FireworksClientError("Deadline exceeded before HTTP call")
+                call_timeout = min(call_timeout, remaining)
+
             try:
-                response = await self._client.post("/chat/completions", json=payload)
+                response = await self._client.post("/chat/completions", json=payload, timeout=call_timeout)
                 response.raise_for_status()
                 data = response.json()
                 return _parse_completion(data, model)
@@ -138,10 +152,17 @@ def _parse_completion(data: dict, model: str) -> CompletionResult:
     if text is None:
         text = ""
 
+    finish_reason = choices[0].get("finish_reason", "")
+
     usage = data.get("usage", {}) or {}
     total_tokens = int(usage.get("total_tokens", 0))
 
-    return CompletionResult(text=text.strip(), total_tokens=total_tokens, model=model)
+    return CompletionResult(
+        text=text.strip(), 
+        total_tokens=total_tokens, 
+        model=model, 
+        finish_reason=finish_reason
+    )
 
 
 def _time_remaining(deadline: float) -> float:

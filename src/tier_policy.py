@@ -22,10 +22,17 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-_SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*b(?:illion)?\b", re.IGNORECASE)
+_SIZE_RE = re.compile(r"(?:(\d+)\s*x\s*)?(\d+(?:\.\d+)?)\s*b(?:illion)?\b", re.IGNORECASE)
 
-_SMALL_HINTS = ("small", "mini", "lite", "tiny")
-_LARGE_HINTS = ("large", "xl", "70b", "72b", "405b", "maverick", "scout")
+_SMALL_HINTS = ("mini", "nano", "small", "lite")
+_LARGE_HINTS = ("pro", "ultra", "large", "max", "x", "xxl", "heavy")
+
+# Models known to be unreliable and/or unable to suppress internal
+# reasoning via system prompt (dedicated "thinking" models whose visible
+# content IS the reasoning trace, not narration they can be told to skip).
+# Excluded from routing even if present in ALLOWED_MODELS — being allowed
+# to use a model does not require using it.
+_BLOCKED_MODEL_SUBSTRINGS = ("kimi-k2p5", "kimi-k2p6")
 
 
 @dataclass(frozen=True)
@@ -35,14 +42,11 @@ class CategoryPolicy:
 
 
 class TierPolicy:
-    def __init__(self, allowed_models: List[str], config_path: str = "config/tier_mapping.yaml", local_model_id: str | None = None):
+    def __init__(self, allowed_models: List[str], config_path: str = "config/tier_mapping.yaml"):
         if not allowed_models:
             raise ValueError("ALLOWED_MODELS is empty — cannot build a tier policy")
 
         self.ordered_models: List[str] = _order_models_by_estimated_cost(allowed_models)
-        if local_model_id:
-            self.ordered_models.insert(0, f"local:{local_model_id}")
-            
         self._config = _load_config(config_path)
         logger.info("Model tiers resolved (cheapest -> most expensive): %s", self.ordered_models)
 
@@ -66,12 +70,24 @@ class TierPolicy:
             max_escalations=int(cfg.get("max_escalations", 1)),
         )
 
-    def generation_params(self) -> Dict:
+    def generation_params(self, category: str = None) -> Dict:
+        """
+        Return max_tokens/temperature for a call. If `category` is given
+        and has its own `max_tokens` in tier_mapping.yaml, that value wins;
+        otherwise falls back to the global `generation.max_tokens`.
+        """
         gen_cfg = self._config.get("generation", {})
-        return {
-            "max_tokens": int(gen_cfg.get("max_tokens", 600)),
-            "temperature": float(gen_cfg.get("temperature", 0.2)),
-        }
+        default_max_tokens = int(gen_cfg.get("max_tokens", 500))
+        temperature = float(gen_cfg.get("temperature", 0.2))
+
+        if category is not None:
+            categories_cfg: Dict = self._config.get("categories", {})
+            cat_cfg = categories_cfg.get(category, {})
+            max_tokens = int(cat_cfg.get("max_tokens", default_max_tokens))
+        else:
+            max_tokens = default_max_tokens
+
+        return {"max_tokens": max_tokens, "temperature": temperature}
 
 
 def _order_models_by_estimated_cost(models: List[str]) -> List[str]:
@@ -81,8 +97,18 @@ def _order_models_by_estimated_cost(models: List[str]) -> List[str]:
     common size adjectives. Models with no discernible size hint are
     placed in the middle, preserving their relative published order.
     """
+    usable = [
+        m for m in models
+        if not any(blocked in m.lower() for blocked in _BLOCKED_MODEL_SUBSTRINGS)
+    ]
+    if not usable:
+        # Safety net: if blocking would leave zero models, don't block —
+        # better a slow/verbose answer than a hard crash from an empty list.
+        logger.warning("All models were blocked — falling back to full ALLOWED_MODELS list.")
+        usable = models
+
     scored: List[tuple] = []
-    for idx, model_id in enumerate(models):
+    for idx, model_id in enumerate(usable):
         score = _estimate_size_score(model_id)
         scored.append((score, idx, model_id))
 
@@ -97,7 +123,9 @@ def _estimate_size_score(model_id: str) -> float:
     match = _SIZE_RE.search(lowered)
     if match:
         try:
-            return float(match.group(1))
+            multiplier = float(match.group(1)) if match.group(1) else 1.0
+            base = float(match.group(2))
+            return multiplier * base
         except ValueError:
             pass
 
@@ -106,8 +134,9 @@ def _estimate_size_score(model_id: str) -> float:
     if any(hint in lowered for hint in _LARGE_HINTS):
         return 200.0
 
-    # Unknown size: assume mid-range so it doesn't distort the two ends.
-    return 50.0
+    # Unknown size: assume premium/expensive so it sorts to the top tier.
+    # This prevents accidentally using a costly model as mid-tier.
+    return 1000.0
 
 
 def _load_config(config_path: str) -> Dict:

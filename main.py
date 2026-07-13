@@ -29,7 +29,6 @@ import time
 from src.concurrency_manager import run_all_tasks
 from src.escalation_controller import TaskResult
 from src.fireworks_client import FireworksClient
-from src.local_client import LocalClient
 from src.result_writer import ResultWriteError, write_results
 from src.task_loader import TaskLoadError, load_tasks
 from src.tier_policy import TierPolicy
@@ -44,7 +43,7 @@ TOTAL_RUNTIME_BUDGET_SECONDS = 10 * 60
 SAFETY_BUFFER_SECONDS = 30  # leave headroom to write output before the hard 10-min ceiling
 EFFECTIVE_DEADLINE_SECONDS = TOTAL_RUNTIME_BUDGET_SECONDS - SAFETY_BUFFER_SECONDS
 
-MAX_CONCURRENCY = int(os.environ.get("MAX_CONCURRENCY", "8"))
+MAX_CONCURRENCY = int(os.environ.get("MAX_CONCURRENCY", "20"))
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -84,25 +83,9 @@ async def _run(start_time: float) -> list[TaskResult]:
         logger.warning("No tasks to process — writing empty results file.")
         return []
 
-    # Try to find a local model
-    local_client = None
-    local_model_id = None
-    models_dir = os.path.join(os.path.dirname(__file__), "models")
-    if os.path.exists(models_dir):
-        ggufs = [f for f in os.listdir(models_dir) if f.endswith(".gguf")]
-        if ggufs:
-            local_model_id = ggufs[0]
-            try:
-                local_client = LocalClient(os.path.join(models_dir, local_model_id))
-            except Exception as exc:
-                logger.warning("Failed to load local model %s: %s", local_model_id, exc)
-                local_model_id = None
-                local_client = None
-
     tier_policy = TierPolicy(
         allowed_models=allowed_models, 
-        config_path=TIER_CONFIG_PATH,
-        local_model_id=local_model_id
+        config_path=TIER_CONFIG_PATH
     )
     client = FireworksClient(api_key=api_key, base_url=base_url)
 
@@ -115,7 +98,6 @@ async def _run(start_time: float) -> list[TaskResult]:
             tier_policy=tier_policy,
             deadline=deadline,
             max_concurrency=MAX_CONCURRENCY,
-            local_client=local_client,
         )
     finally:
         await client.close()
@@ -158,4 +140,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import os
+    code = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)

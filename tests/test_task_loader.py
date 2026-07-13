@@ -1,67 +1,107 @@
+#!/usr/bin/env python3
+"""
+tests/test_task_loader.py
+
+Pure-code, zero-network unit tests for src/task_loader.py — the
+/input/tasks.json contract. A bug here is the highest-severity kind:
+per the rules, malformed I/O handling can zero your entire submission.
+
+Run: python3 tests/test_task_loader.py
+"""
+
 import json
+import os
 import sys
 import tempfile
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.task_loader import TaskLoadError, load_tasks
 
 
-def _write_temp_json(data) -> str:
+def _write_temp(content: str) -> str:
     fd, path = tempfile.mkstemp(suffix=".json")
-    with open(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(content)
     return path
 
 
-def test_valid_tasks_load():
-    path = _write_temp_json([{"task_id": "t1", "prompt": "Hello"}])
+def run() -> None:
+    failures = []
+
+    # --- valid, minimal, well-formed input ---
+    path = _write_temp(json.dumps([{"task_id": "t1", "prompt": "hello"}]))
     tasks = load_tasks(path)
-    assert len(tasks) == 1
-    assert tasks[0].task_id == "t1"
-    assert tasks[0].prompt == "Hello"
+    if len(tasks) != 1 or tasks[0].task_id != "t1":
+        failures.append("valid minimal input did not load correctly")
 
+    # --- empty list is valid (should return [], not raise) ---
+    path = _write_temp("[]")
+    try:
+        tasks = load_tasks(path)
+        if tasks != []:
+            failures.append("empty list should return an empty list")
+    except TaskLoadError:
+        failures.append("empty list should NOT raise TaskLoadError")
 
-def test_empty_list_ok():
-    path = _write_temp_json([])
-    tasks = load_tasks(path)
-    assert tasks == []
+    # --- missing file should raise ---
+    try:
+        load_tasks("/tmp/definitely-does-not-exist-tasks.json")
+        failures.append("missing input file should raise TaskLoadError")
+    except TaskLoadError:
+        pass
 
-
-def test_missing_task_id_raises():
-    path = _write_temp_json([{"prompt": "Hello"}])
+    # --- not valid JSON should raise ---
+    path = _write_temp("{not valid json")
     try:
         load_tasks(path)
-        assert False, "expected TaskLoadError"
+        failures.append("invalid JSON should raise TaskLoadError")
     except TaskLoadError:
         pass
 
-
-def test_duplicate_task_id_raises():
-    path = _write_temp_json([
-        {"task_id": "t1", "prompt": "Hello"},
-        {"task_id": "t1", "prompt": "World"},
-    ])
+    # --- JSON that isn't a list should raise ---
+    path = _write_temp(json.dumps({"task_id": "t1", "prompt": "hello"}))
     try:
         load_tasks(path)
-        assert False, "expected TaskLoadError"
+        failures.append("non-list JSON should raise TaskLoadError")
     except TaskLoadError:
         pass
 
-
-def test_missing_file_raises():
+    # --- one malformed entry among otherwise-valid entries ---
+    mixed = [
+        {"task_id": "t1", "prompt": "valid prompt"},
+        {"task_id": "t2"},  # missing "prompt"
+        {"task_id": "t3", "prompt": "also valid"},
+    ]
+    path = _write_temp(json.dumps(mixed))
     try:
-        load_tasks("/nonexistent/path/tasks.json")
-        assert False, "expected TaskLoadError"
+        tasks = load_tasks(path)
+        if len(tasks) != 2:
+            failures.append(f"expected 2 valid tasks after skipping malformed, got {len(tasks)}")
     except TaskLoadError:
-        pass
+        failures.append("a task missing 'prompt' should be skipped, not raise TaskLoadError")
+
+    # --- duplicate task_id should be skipped ---
+    dup = [
+        {"task_id": "t1", "prompt": "a"},
+        {"task_id": "t1", "prompt": "b"},
+    ]
+    path = _write_temp(json.dumps(dup))
+    try:
+        tasks = load_tasks(path)
+        if len(tasks) != 1:
+            failures.append(f"expected 1 valid task after skipping duplicate, got {len(tasks)}")
+    except TaskLoadError:
+        failures.append("duplicate task_id should be skipped, not raise TaskLoadError")
+
+    if failures:
+        print(f"FAILED: {len(failures)} case(s)")
+        for f in failures:
+            print(f"  - {f}")
+        sys.exit(1)
+
+    print("passed: task_loader — input contract behaves as documented")
 
 
 if __name__ == "__main__":
-    test_valid_tasks_load()
-    test_empty_list_ok()
-    test_missing_task_id_raises()
-    test_duplicate_task_id_raises()
-    test_missing_file_raises()
-    print("All task_loader tests passed.")
+    run()

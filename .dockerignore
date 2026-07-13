@@ -1,5 +1,8 @@
 dev/
 tests/
+test_output/
+output/
+venv/
 .env
 .git
 .gitignore
@@ -8,3 +11,10 @@ __pycache__/
 .pytest_cache/
 README.md
 PROJECT_SPEC.md
+details.md
+test_tasks.json
+test_local.py
+models.json
+*.mp4
+*.pdf
+.DS_Store

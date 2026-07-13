@@ -1,10 +1,78 @@
 [
-  {"task_id": "s1", "prompt": "Explain how photosynthesis works."},
-  {"task_id": "s2", "prompt": "If a shirt costs $40 and is discounted by 25%, calculate the final price."},
-  {"task_id": "s3", "prompt": "Classify the sentiment of this review as positive or negative: I loved this product!"},
-  {"task_id": "s4", "prompt": "Summarise the following text in one sentence: The quick brown fox jumps over the lazy dog repeatedly during the afternoon."},
-  {"task_id": "s5", "prompt": "Extract the named entities from this text: Tim Cook leads Apple in Cupertino, California."},
-  {"task_id": "s6", "prompt": "This function has a bug:\n```python\ndef add(a, b):\n    return a - b\n```\nFind and fix it."},
-  {"task_id": "s7", "prompt": "Solve this logic puzzle: all of the following must be true. Alice is not next to Bob. Who sits where?"},
-  {"task_id": "s8", "prompt": "Write a function that returns the nth Fibonacci number."}
+    {
+        "task_id": "practice-01",
+        "prompt": "What is the capital of Australia, and what body of water is it near?"
+    },
+    {
+        "task_id": "practice-02",
+        "prompt": "A store has 240 items. It sells 15% on Monday and 60 more on Tuesday. How many items remain?"
+    },
+    {
+        "task_id": "practice-03",
+        "prompt": "Classify the sentiment of this review: The battery life is great, but the screen scratches too easily."
+    },
+    {
+        "task_id": "practice-04",
+        "prompt": "Summarize the following in exactly one sentence: The Industrial Revolution was a period of global transition of human economy towards more widespread, efficient and stable manufacturing processes that succeeded the Agricultural Revolution, starting from Great Britain, continental Europe, and the United States, that occurred during the period from around 1760 to about 1820-1840."
+    },
+    {
+        "task_id": "practice-05",
+        "prompt": "Extract all named entities and their types from: Maria Sanchez joined Fireworks AI in Berlin last March."
+    },
+    {
+        "task_id": "practice-06",
+        "prompt": "This function should return the max of a list but has a bug: def get_max(nums): return nums[0]. Find and fix it."
+    },
+    {
+        "task_id": "practice-07",
+        "prompt": "Three friends, Sam, Jo, and Lee, each own a different pet: cat, dog, bird. Sam does not own the bird. Jo owns the dog. Who owns the cat?"
+    },
+    {
+        "task_id": "practice-08",
+        "prompt": "Write a Python function that returns the second-largest number in a list, handling duplicates correctly."
+    },
+    {
+        "task_id": "easy-09",
+        "prompt": "Who wrote the play Romeo and Juliet?"
+    },
+    {
+        "task_id": "easy-10",
+        "prompt": "Classify the sentiment: This restaurant has terrible service and the food was cold."
+    },
+    {
+        "task_id": "easy-11",
+        "prompt": "Extract the names of companies from this text: Apple and Google announced a new partnership today."
+    },
+    {
+        "task_id": "easy-12",
+        "prompt": "Summarize in one sentence: The process of photosynthesis allows plants to convert light energy into chemical energy, creating oxygen as a byproduct."
+    },
+    {
+        "task_id": "easy-13",
+        "prompt": "What is the largest planet in our solar system?"
+    },
+    {
+        "task_id": "easy-14",
+        "prompt": "Classify the sentiment: I'm not sure how I feel about this book, it was just okay."
+    },
+    {
+        "task_id": "hard-15",
+        "prompt": "Calculate the compound interest for $5,000 at 4% annual rate over 5 years."
+    },
+    {
+        "task_id": "hard-16",
+        "prompt": "Write a Python function to reverse a linked list."
+    },
+    {
+        "task_id": "hard-17",
+        "prompt": "If 5 machines take 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets?"
+    },
+    {
+        "task_id": "hard-18",
+        "prompt": "Write a JavaScript function that checks if a string is a palindrome."
+    },
+    {
+        "task_id": "hard-19",
+        "prompt": "Solve for x: 3x + 15 = 45"
+    }
 ]
