@@ -1,6 +1,6 @@
 # AMD Developer Hackathon - Act II: Dynamic Hybrid-LLM Router Agent (Track 1)
 
-This document explains everything about the Hybrid-LLM Router Agent - from basic concepts to complete system design and execution flows. After reading this, you should understand exactly how tasks flow through the system and how optimization limits are enforced without needing to read the code.
+This document explains everything about the Hybrid-LLM Router Agent - from basic concepts to complete system design, execution flows, and our interactive React user interface. After reading this, you should understand exactly how tasks flow through the system and how optimization limits are enforced without needing to read the code.
 
 ---
 
@@ -18,13 +18,14 @@ Through our dynamic hybrid routing approach, we successfully optimized the evalu
 1. [What is an LLM Router?](#1-what-is-an-llm-router)
 2. [Project Overview](#2-project-overview)
 3. [File Structure](#3-file-structure)
-4. [The Journey of a Task (Simple Version)](#4-the-journey-of-a-task-simple-version)
-5. [The Journey of a Task (Concurrent Async Version)](#5-the-journey-of-a-task-concurrent-async-version)
-6. [Deep Dive: Each Component](#6-deep-dive-each-component)
-7. [How Local Stamping Works](#7-how-local-stamping-works)
-8. [How Sandboxing and Code Execution Works](#8-how-sandboxing-and-code-execution-works)
-9. [Building and Running](#9-building-and-running)
-10. [Understanding the Output](#10-understanding-the-output)
+4. [Interactive React UI & Web API](#4-interactive-react-ui--web-api)
+5. [The Journey of a Task (Simple Version)](#5-the-journey-of-a-task-simple-version)
+6. [The Journey of a Task (Concurrent Async Version)](#6-the-journey-of-a-task-concurrent-async-version)
+7. [Deep Dive: Each Component](#7-deep-dive-each-component)
+8. [How Local Stamping Works](#8-how-local-stamping-works)
+9. [How Sandboxing and Code Execution Works](#9-how-sandboxing-and-code-execution-works)
+10. [Building and Running](#10-building-and-running)
+11. [Understanding the Output](#11-understanding-the-output)
 
 ---
 
@@ -58,14 +59,20 @@ The Router is built for **Track 1** of the evaluation harness. It must process a
 
 ```
 ├── main.py                     # Entry point: handles CLI, async loops, and file I/O
+├── server.py                   # FastAPI backend exposing routing metrics & execution endpoints
 ├── Dockerfile                  # Container definition: downloads local model at build time
-├── requirements.txt            # Python dependencies (httpx, PyYAML, llama-cpp-python)
+├── requirements.txt            # Python dependencies (httpx, PyYAML, llama-cpp-python, fastapi, uvicorn)
 ├── config/
 │   └── tier_mapping.yaml       # Defines model limits, starting tiers, and category tokens
+├── frontend/                   # Vite React front-end application
+│   ├── src/
+│   │   ├── App.jsx             # React dashboard entry with Console & visualizer flow
+│   │   └── index.css           # Glassmorphism dark-theme style configuration
+│   └── package.json            # Frontend dependency definitions
 └── src/
     ├── category_classifier.py  # microsecond keyword-based regex classifier
     ├── fireworks_client.py     # HTTP completions client with retry backoffs and deadline checks
-    ├── local_model.py          # Synchronous thread-safe wrapper for llama-cpp-python
+    ├── local_model.py          # Daemon thread-safe task queue wrapper for llama-cpp-python
     ├── code_executor.py        # Isolated AST-validated Python code executor
     ├── escalation_controller.py# Orchestrates local execution, API routing, and fallbacks
     └── answer_validator.py     # Checks for output truncation, structure, and reasoning leaks
@@ -73,7 +80,32 @@ The Router is built for **Track 1** of the evaluation harness. It must process a
 
 ---
 
-## 4. The Journey of a Task (Simple Version)
+## 4. Interactive React UI & Web API
+
+We have integrated a complete, real-time web interface and backend API allowing users to visualize and interact with the routing logic.
+
+* **FastAPI Backend (`server.py`)**: Exposes endpoints to route incoming prompts dynamically (`/api/route`) and stream aggregate statistics (`/api/stats`).
+* **Vite React UI (`frontend/`)**: Displays a dashboard detailing:
+  * **Interactive Console**: Allows inputting user prompts or picking difficult templates (Math, Logic, Debugging, etc.).
+  * **Routing Visualizer**: Animates step-by-step query analysis to show exactly where execution occurred (Offline local Qwen vs. Remote Fireworks API).
+  * **Stats strip**: Live meters reflecting Total API Tokens Saved, Local Routing Ratio, and Total Cost Reductions.
+  * **Recent Logs**: Lists history of all routed tasks, execution latency, and model endpoints utilized.
+
+To run the web application locally:
+1. Start the FastAPI backend:
+   ```bash
+   env $(grep -v '^#' .env | xargs) uvicorn server:app --reload --port 8000
+   ```
+2. Start the React frontend:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+3. Open `http://localhost:5173` in your web browser.
+
+---
+
+## 5. The Journey of a Task (Simple Version)
 
 When a single task (e.g., a math question) enters the system, it follows this chronological flow:
 
@@ -96,7 +128,7 @@ graph TD
 
 ---
 
-## 5. The Journey of a Task (Concurrent Async Version)
+## 6. The Journey of a Task (Concurrent Async Version)
 
 In production, tasks are not processed one-by-one. The agent utilizes Python's `asyncio` event loop to execute all tasks concurrently.
 
@@ -110,7 +142,7 @@ In production, tasks are not processed one-by-one. The agent utilizes Python's `
   │             │             │             │
   ├─► Local     ├─► Code      ├─► Direct    ├─► Local
   │   Model     │   Sandbox   │   API       │   Model
-  │   (Thread)  │   (Subproc) │   (HTTP)    │   (Thread)
+  │   (Queue)   │   (Subproc) │   (HTTP)    │   (Queue)
   ▼             ▼             ▼             ▼
   └─────────────┼─────────────┴─────────────┘
                 │
@@ -121,22 +153,22 @@ In production, tasks are not processed one-by-one. The agent utilizes Python's `
        [ Output Results File ]
 ```
 
-* **Thread Safety:** Local model calls (`llama.cpp`) are CPU-heavy and not natively thread-safe. We wrap them in a real OS-level `threading.Lock` and coordinate executions using `asyncio.to_thread` to prevent parallel crashes.
+* **Thread Safety:** Local model calls (`llama.cpp`) are CPU-heavy and block python's event loop. We wrap them in a daemon task queue running in a dedicated background worker thread to ensure non-blocking, asynchronous execution.
 * **Network Concurrency:** Fireworks API completions are HTTP-based and executed using `httpx.AsyncClient`, multiplexing requests over shared connection pools for near-zero networking overhead.
 
 ---
 
-## 6. Deep Dive: Each Component
+## 7. Deep Dive: Each Component
 
 ### `category_classifier.py`
 Utilizes microsecond-fast regex patterns to classify incoming tasks into 8 categories. This ensures we don't call an external model for classification, saving 100% of routing tokens.
 
 ### `local_model.py`
-Wraps the lightweight `Qwen2.5-1.5B-Instruct` (Q4_K_M quantized GGUF) via `llama-cpp-python`. This local model executes on the CPU within the Docker container to answer straightforward tasks (like Sentiment or NER), effectively offloading work from the paid API without incurring network latency or token costs.
+Wraps the lightweight `Qwen2.5-1.5B-Instruct` (Q4_K_M quantized GGUF) via a background worker thread. This local model executes on the CPU within the Docker container to answer straightforward tasks (like Sentiment or NER), effectively offloading work from the paid API without incurring network latency or token costs.
 
 ### `fireworks_client.py`
 An async wrapper around the Fireworks HTTP endpoint. It implements:
-* **Exponential Backoff:** Retries rate-limited (429) or server-side (500+) errors.
+* **Wait & Retry Backoffs:** Retries rate-limited (429) or server-side (500+) errors.
 * **Dynamic Timeouts:** Reduces the HTTP request timeout dynamically as the task approaches the global 10-minute container deadline.
 * **Thinking Disabler:** Appends `"thinking": {"type": "disabled"}` to payloads for DeepSeek/Kimi models to prevent token wastage.
 
@@ -152,7 +184,7 @@ Validates model output correctness:
 
 ---
 
-## 7. How Local Stamping Works
+## 8. How Local Stamping Works
 
 To satisfy the grading requirement that all outputs must originate from the Fireworks API:
 
@@ -178,7 +210,7 @@ To satisfy the grading requirement that all outputs must originate from the Fire
 
 ---
 
-## 8. How Sandboxing and Code Execution Works
+## 9. How Sandboxing and Code Execution Works
 
 For math/logic tasks, natural language generation is prone to hallucination. Spawning a python interpreter solves this:
 
@@ -193,7 +225,7 @@ For math/logic tasks, natural language generation is prone to hallucination. Spa
 
 ---
 
-## 9. Building and Running
+## 10. Building and Running
 
 ### Prerequisites
 Make sure your `.env` contains:
@@ -231,7 +263,7 @@ ALLOWED_MODELS=accounts/fireworks/models/deepseek-v4-pro
 
 ---
 
-## 10. Understanding the Output
+## 11. Understanding the Output
 
 After a run completes, you will see a summary logged in the console:
 
