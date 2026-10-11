@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SSE Streaming Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        #output {
+            white-space: pre-wrap;
+            border: 1px solid #00ff00;
+            padding: 10px;
+            margin: 10px 0;
+            min-height: 200px;
+            background: #000;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #00cc00;
+        }
+        .token {
+            display: inline;
+        }
+        .metadata {
+            color: #ffff00;
+            display: block;
+        }
+        .error {
+            color: #ff0000;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 SSE Streaming Test</h1>
+    
+    <div>
+        <label>Conversation ID:</label>
+        <input type="text" id="convId" value="acc69894-c17c-4e31-aac3-d6badf7f8431" style="width: 400px;">
+    </div>
+    
+    <div style="margin-top: 10px;">
+        <label>Prompt:</label>
+        <input type="text" id="prompt" value="What is 2+2? Answer in one sentence." style="width: 400px;">
+    </div>
+    
+    <div style="margin-top: 10px;">
+        <button onclick="startStream()">Start Streaming</button>
+        <button onclick="clearOutput()">Clear</button>
+    </div>
+    
+    <h3>Response:</h3>
+    <div id="output"></div>
+    
+    <h3>Events Log:</h3>
+    <div id="events" style="color: #888; font-size: 12px;"></div>
+
+    <script>
+        let eventSource = null;
+        
+        function addToOutput(text, className = '') {
+            const output = document.getElementById('output');
+            const span = document.createElement('span');
+            span.className = className;
+            span.textContent = text;
+            output.appendChild(span);
+        }
+        
+        function addEvent(text) {
+            const events = document.getElementById('events');
+            events.innerHTML += text + '<br>';
+            events.scrollTop = events.scrollHeight;
+        }
+        
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+            document.getElementById('events').innerHTML = '';
+        }
+        
+        function startStream() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            clearOutput();
+            
+            const convId = document.getElementById('convId').value;
+            const prompt = document.getElementById('prompt').value;
+            
+            addEvent(`🚀 Starting stream for conversation: ${convId}`);
+            addEvent(`📝 Prompt: ${prompt}`);
+            
+            // Create EventSource for SSE
+            const url = `http://localhost:8000/api/chat/stream`;
+            
+            // SSE doesn't support POST, so we need to use fetch with streaming
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    conversation_id: convId,
+                    prompt: prompt
+                })
+            }).then(response => {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                function processStream() {
+                    reader.read().then(({ done, value }) => {
+                        if (done) {
+                            addEvent('✅ Stream complete');
+                            return;
+                        }
+                        
+                        const chunk = decoder.decode(value, { stream: true });
+                        const lines = chunk.split('\n');
+                        
+                        lines.forEach(line => {
+                            if (!line.trim() || !line.startsWith('event:') && !line.startsWith('data:')) {
+                                return;
+                            }
+                            
+                            if (line.startsWith('event:')) {
+                                const eventType = line.substring(6).trim();
+                                addEvent(`📡 Event: ${eventType}`);
+                            } else if (line.startsWith('data:')) {
+                                const data = JSON.parse(line.substring(5).trim());
+                                
+                                // Get the last event type from events log
+                                const eventsDiv = document.getElementById('events');
+                                const lastEvent = eventsDiv.innerHTML.split('<br>').slice(-2)[0];
+                                const eventType = lastEvent.includes('token') ? 'token' : 
+                                               lastEvent.includes('metadata') ? 'metadata' :
+                                               lastEvent.includes('done') ? 'done' : 
+                                               lastEvent.includes('error') ? 'error' : 'unknown';
+                                
+                                if (eventType === 'token') {
+                                    addToOutput(data.token, 'token');
+                                } else if (eventType === 'metadata') {
+                                    addToOutput(`\n[${JSON.stringify(data)}]\n`, 'metadata');
+                                } else if (eventType === 'done') {
+                                    addToOutput(`\n\n✅ Done: ${JSON.stringify(data, null, 2)}\n`, 'metadata');
+                                } else if (eventType === 'error') {
+                                    addToOutput(`\n❌ Error: ${data.message}\n`, 'error');
+                                }
+                            }
+                        });
+                        
+                        processStream();
+                    });
+                }
+                
+                processStream();
+            }).catch(error => {
+                addEvent(`❌ Error: ${error}`);
+                addToOutput(`\n❌ Connection Error: ${error}\n`, 'error');
+            });
+        }
+    </script>
+</body>
+</html>

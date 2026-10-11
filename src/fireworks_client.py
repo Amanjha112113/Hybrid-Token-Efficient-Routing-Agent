@@ -45,7 +45,9 @@ class FireworksClient:
         if not base_url:
             raise ValueError("FIREWORKS_BASE_URL is required")
 
-        self._base_url = base_url.rstrip("/")
+        self.api_key = api_key  # Store for external access
+        self.base_url = base_url.rstrip("/")  # Store for external access
+        self._base_url = self.base_url  # Keep internal reference
         self._max_retries = max_retries
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
@@ -140,6 +142,77 @@ class FireworksClient:
                 await asyncio.sleep(backoff)
 
         raise FireworksClientError(f"Exhausted retries calling {model}: {last_error}")
+
+    async def complete_chat(
+        self,
+        model: str,
+        messages: list[dict[str, str]],
+        max_tokens: int = 1000,
+        temperature: float = 0.3,
+        deadline: Optional[float] = None,
+    ) -> CompletionResult:
+        """
+        Execute multi-turn chat completion with a list of message dicts.
+        """
+        if deadline is not None and _time_remaining(deadline) <= 0:
+            raise FireworksClientError("Deadline already exceeded — call skipped")
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if "deepseek" in model.lower() or "kimi" in model.lower():
+            payload["thinking"] = {"type": "disabled"}
+
+        last_error: Optional[Exception] = None
+        for attempt in range(self._max_retries + 1):
+            if deadline is not None and _time_remaining(deadline) <= 0:
+                raise FireworksClientError("Deadline exceeded during retries")
+
+            call_timeout = 120.0
+            if deadline is not None:
+                remaining = _time_remaining(deadline)
+                if remaining <= 0:
+                    raise FireworksClientError("Deadline exceeded before HTTP call")
+                call_timeout = min(call_timeout, remaining)
+
+            try:
+                response = await self._client.post("/chat/completions", json=payload, timeout=call_timeout)
+                response.raise_for_status()
+                data = response.json()
+                return _parse_completion(data, model)
+
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                last_error = exc
+                logger.warning(
+                    "Transient error calling model %s (attempt %d/%d): %s",
+                    model, attempt + 1, self._max_retries + 1, exc,
+                )
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status >= 500 or status == 429:
+                    last_error = exc
+                    logger.warning(
+                        "Server/rate-limit error (%d) calling model %s (attempt %d/%d)",
+                        status, model, attempt + 1, self._max_retries + 1,
+                    )
+                else:
+                    raise FireworksClientError(
+                        f"Non-retryable error calling {model}: {status} {exc.response.text}"
+                    ) from exc
+            except (KeyError, ValueError, IndexError) as exc:
+                raise FireworksClientError(f"Malformed response from {model}: {exc}") from exc
+
+            if attempt < self._max_retries:
+                backoff = min(2 ** attempt, 4)
+                if deadline is not None:
+                    backoff = min(backoff, max(_time_remaining(deadline), 0))
+                await asyncio.sleep(backoff)
+
+        raise FireworksClientError(f"Exhausted retries calling {model}: {last_error}")
+
 
 
 def _parse_completion(data: dict, model: str) -> CompletionResult:
