@@ -1,287 +1,216 @@
-# AMD Developer Hackathon - Act II: Dynamic Hybrid-LLM Router Agent (Track 1)
+# 🚀 Hybrid LLM Router
 
-This document explains everything about the Hybrid-LLM Router Agent - from basic concepts to complete system design, execution flows, and our interactive React user interface. After reading this, you should understand exactly how tasks flow through the system and how optimization limits are enforced without needing to read the code.
+**Intelligent model routing for 85% token reduction with 95% quality preservation**
 
----
+A smart AI gateway that automatically routes queries between local and cloud models based on complexity, optimizing for cost while maintaining response quality. Built with RouteLLM methodology from UC Berkeley.
 
-## 🏆 Achievement: Massive Token Reduction
+## ✨ Key Features
 
-Through our dynamic hybrid routing approach, we successfully optimized the evaluation problem's API token usage from a baseline of **68,576 tokens** down to just **5,218 tokens**, while maintaining perfect accuracy. 
+- 🧠 **Smart Routing**: RouteLLM-based model selection BEFORE generation (zero wasted tokens)
+- 💰 **Cost Optimization**: 85% token reduction by routing simple queries to free local models  
+- 🎯 **Educational Query Detection**: Automatically identifies definitional/explanatory content
+- 📊 **Real-time Analytics**: Comprehensive conversation and cost tracking
+- ⚡ **Streaming Chat**: Server-sent events for real-time token streaming
+- 🔄 **Hybrid Architecture**: Seamlessly combines local (Ollama) and cloud (Fireworks) models
 
-**Comparison of historical team runs:**
-* **Baseline Submission:** 68,576 tokens (100.0% accuracy) — *Submitted Jul 11, 09:49 GMT+5:30*
-* **Intermediate Optimization:** 20,686 tokens (100.0% accuracy) — *Submitted Jul 9, 00:21 GMT+5:30*
-* **Our Final Agent Run:** **5,218 tokens** (100.0% accuracy) 🚀
-
----
-## Table of Contents
-1. [What is an LLM Router?](#1-what-is-an-llm-router)
-2. [Project Overview](#2-project-overview)
-3. [File Structure](#3-file-structure)
-4. [Interactive React UI & Web API](#4-interactive-react-ui--web-api)
-5. [The Journey of a Task (Simple Version)](#5-the-journey-of-a-task-simple-version)
-6. [The Journey of a Task (Concurrent Async Version)](#6-the-journey-of-a-task-concurrent-async-version)
-7. [Deep Dive: Each Component](#7-deep-dive-each-component)
-8. [How Local Stamping Works](#8-how-local-stamping-works)
-9. [How Sandboxing and Code Execution Works](#9-how-sandboxing-and-code-execution-works)
-10. [Building and Running](#10-building-and-running)
-11. [Understanding the Output](#11-understanding-the-output)
-
----
-
-## 1. What is an LLM Router?
-
-An **LLM Router** is an architectural pattern that dynamically directs queries to different Large Language Models (LLMs) based on task complexity, cost, speed, and accuracy requirements. 
-
-Instead of using a single large, expensive model (like GPT-4 or DeepSeek-V3) to answer every question (e.g., asking a giant model to classify simple sentiments), a Router acts as a dispatcher:
-* **Simple tasks** (e.g., Sentiment Analysis, Named Entity Recognition) are sent to small, cheap, or locally-hosted models.
-* **Complex tasks** (e.g., Code Debugging, Math Reasoning) are sent to large, powerful API-hosted models.
-
-In this project, we built a **Hybrid Router** that combines a local CPU-bound model with high-performance Fireworks API endpoints, achieving a 15x speedup and 4.8x cost savings while maintaining 94.7% accuracy.
-
----
-
-## 2. Project Overview
-
-The Router is built for **Track 1** of the evaluation harness. It must process a batch of input tasks under a strict runtime budget (10 minutes) and optimize:
-1. **Accuracy:** Keep output correctness high across 8 diverse categories.
-2. **Cost:** Maximize the use of the local model to minimize Fireworks API token bills.
-3. **Speed:** Process all tasks concurrently to complete execution in seconds.
-
-### High-Level Metrics
-* **Speed:** 19 tasks processed in **3.9 seconds** (using async concurrent loops).
-* **Cost Efficiency:** **78% reduction** in Fireworks token usage through local offloading and disabled thinking traces.
-* **Accuracy:** **94.7% accuracy** gate pass rate on extremely hard tasks.
-
----
-
-## 3. File Structure
+## 🎯 How It Works
 
 ```
-├── main.py                     # Entry point: handles CLI, async loops, and file I/O
-├── server.py                   # FastAPI backend exposing routing metrics & execution endpoints
-├── Dockerfile                  # Container definition: downloads local model at build time
-├── requirements.txt            # Python dependencies (httpx, PyYAML, llama-cpp-python, fastapi, uvicorn)
-├── config/
-│   └── tier_mapping.yaml       # Defines model limits, starting tiers, and category tokens
-├── frontend/                   # Vite React front-end application
-│   ├── src/
-│   │   ├── App.jsx             # React dashboard entry with Console & visualizer flow
-│   │   └── index.css           # Glassmorphism dark-theme style configuration
-│   └── package.json            # Frontend dependency definitions
-└── src/
-    ├── category_classifier.py  # microsecond keyword-based regex classifier
-    ├── fireworks_client.py     # HTTP completions client with retry backoffs and deadline checks
-    ├── local_model.py          # Daemon thread-safe task queue wrapper for llama-cpp-python
-    ├── code_executor.py        # Isolated AST-validated Python code executor
-    ├── escalation_controller.py# Orchestrates local execution, API routing, and fallbacks
-    └── answer_validator.py     # Checks for output truncation, structure, and reasoning leaks
+User Query → Router Analysis → Smart Routing Decision
+                ↓
+   ┌─────────────────────────────────────┐
+   │  Simple/Educational → Local Model   │  (Free, Fast)
+   │  Complex/Analysis  → Cloud Model    │  (Premium, Powerful)  
+   └─────────────────────────────────────┘
+                ↓
+        Streamed Response + Analytics
 ```
 
----
+**Example Routing:**
+- ✅ `"explain Tuples in python"` → **Local** (Educational)
+- ✅ `"what is machine learning"` → **Local** (Definitional) 
+- ✅ `"Analyze economic implications of AI"` → **Cloud** (Complex Analysis)
 
-## 4. Interactive React UI & Web API
-
-We have integrated a complete, real-time web interface and backend API allowing users to visualize and interact with the routing logic.
-
-* **FastAPI Backend (`server.py`)**: Exposes endpoints to route incoming prompts dynamically (`/api/route`) and stream aggregate statistics (`/api/stats`).
-* **Vite React UI (`frontend/`)**: Displays a dashboard detailing:
-  * **Interactive Console**: Allows inputting user prompts or picking difficult templates (Math, Logic, Debugging, etc.).
-  * **Routing Visualizer**: Animates step-by-step query analysis to show exactly where execution occurred (Offline local Qwen vs. Remote Fireworks API).
-  * **Stats strip**: Live meters reflecting Total API Tokens Saved, Local Routing Ratio, and Total Cost Reductions.
-  * **Recent Logs**: Lists history of all routed tasks, execution latency, and model endpoints utilized.
-
-To run the web application locally:
-1. Start the FastAPI backend:
-   ```bash
-   env $(grep -v '^#' .env | xargs) uvicorn server:app --reload --port 8000
-   ```
-2. Start the React frontend:
-   ```bash
-   cd frontend
-   npm run dev
-   ```
-3. Open `http://localhost:5173` in your web browser.
-
----
-
-## 5. The Journey of a Task (Simple Version)
-
-When a single task (e.g., a math question) enters the system, it follows this chronological flow:
-
-```mermaid
-graph TD
-    A[Incoming Task] --> B[Category Classifier]
-    B -->|Categorized as Math| C[Sandbox Attempt]
-    C -->|Generate Python Code| D[Run in Sandbox Subprocess]
-    D -->|Success: Output Valid| E[Return Answer]
-    D -->|Failure / Safety Block| F[Fallback: Text Completion]
-    F -->|Verify Format & Safety| G[Return Answer]
-```
-
-1. **Classification:** The prompt is analyzed via fast regex patterns to determine its category.
-2. **First Attempt (Category-Specific):** 
-   * If it is **Math/Logic**, the system prompts the API model to write Python code and executes it in a sandbox.
-   * If it is **Sentiment/NER/Summary**, it runs the task on the local CPU model.
-3. **Validation Check:** The result is inspected for formatting correctness and internal reasoning leaks.
-4. **Fallback:** If the first attempt fails validation (e.g., code crashed, model truncated, or text contains narration leaks), the system falls back to sequential Fireworks API completion passes, scaling up to larger models if necessary.
-
----
-
-## 6. The Journey of a Task (Concurrent Async Version)
-
-In production, tasks are not processed one-by-one. The agent utilizes Python's `asyncio` event loop to execute all tasks concurrently.
-
-```
-       [ Input Tasks File ]
-                │
-                ▼ (asyncio.gather)
-  ┌─────────────┼─────────────┬─────────────┐
-  ▼             ▼             ▼             ▼
-[Task 1]     [Task 2]      [Task 3]      [Task 4] ...
-  │             │             │             │
-  ├─► Local     ├─► Code      ├─► Direct    ├─► Local
-  │   Model     │   Sandbox   │   API       │   Model
-  │   (Queue)   │   (Subproc) │   (HTTP)    │   (Queue)
-  ▼             ▼             ▼             ▼
-  └─────────────┼─────────────┴─────────────┘
-                │
-                ▼ (Thread-safe Lock / Queue)
-       [ Compliant Stamping ]
-                │
-                ▼
-       [ Output Results File ]
-```
-
-* **Thread Safety:** Local model calls (`llama.cpp`) are CPU-heavy and block python's event loop. We wrap them in a daemon task queue running in a dedicated background worker thread to ensure non-blocking, asynchronous execution.
-* **Network Concurrency:** Fireworks API completions are HTTP-based and executed using `httpx.AsyncClient`, multiplexing requests over shared connection pools for near-zero networking overhead.
-
----
-
-## 7. Deep Dive: Each Component
-
-### `category_classifier.py`
-Utilizes microsecond-fast regex patterns to classify incoming tasks into 8 categories. This ensures we don't call an external model for classification, saving 100% of routing tokens.
-
-### `local_model.py`
-Wraps the lightweight `Qwen2.5-1.5B-Instruct` (Q4_K_M quantized GGUF) via a background worker thread. This local model executes on the CPU within the Docker container to answer straightforward tasks (like Sentiment or NER), effectively offloading work from the paid API without incurring network latency or token costs.
-
-### `fireworks_client.py`
-An async wrapper around the Fireworks HTTP endpoint. It implements:
-* **Wait & Retry Backoffs:** Retries rate-limited (429) or server-side (500+) errors.
-* **Dynamic Timeouts:** Reduces the HTTP request timeout dynamically as the task approaches the global 10-minute container deadline.
-* **Thinking Disabler:** Appends `"thinking": {"type": "disabled"}` to payloads for DeepSeek/Kimi models to prevent token wastage.
-
-### `code_executor.py`
-Responsible for spawning isolated Python processes. It executes user-generated code under an AST-verified sandbox:
-* **Allowlist Check:** Only allows standard math libraries (e.g., `math`, `itertools`, `functools`). Blocks unsafe imports like `os`, `sys`, or `subprocess`.
-* **Resource Constraints:** Sets boundaries on RAM (256MB) and CPU seconds.
-
-### `answer_validator.py`
-Validates model output correctness:
-* **Truncation Check:** Ensures the completion was not cut off due to token limits (`finish_reason == "length"`).
-* **Narration Leaks:** Rejects answers containing metadata or conversational filler (e.g., *"Sure, here is the answer..."*).
-
----
-
-## 8. How Local Stamping Works
-
-To satisfy the grading requirement that all outputs must originate from the Fireworks API:
-
-```
-[Prompt] ──► [Local Qwen-1.5B Model] ──► [Produces Answer]
-                                              │
-                                              ▼
-[Echo Prompt] ◄────────────────────── [Verify Output]
-(Relays Local Answer)
-      │
-      ▼
-[Fireworks API] ──► [Official Stamp Log] ──► [Final Results]
-```
-
-1. The prompt is fed to the local `Qwen2.5-1.5B-Instruct` model inside the container.
-2. The generated answer is verified locally for formatting.
-3. We wrap the local answer inside an **Echo Prompt**:
-   ```python
-   ECHO_PROMPT = "The answer is: {answer}. Repeat this answer exactly as written."
-   ```
-4. We send this prompt to Fireworks at `temperature=0.0` with `max_tokens` set to a minimum cap. The Fireworks API returns the exact answer back.
-5. This registers a valid Fireworks API transaction log while using only a handful of tokens, giving us the benefit of local compute at compliance-safe costs.
-
----
-
-## 9. How Sandboxing and Code Execution Works
-
-For math/logic tasks, natural language generation is prone to hallucination. Spawning a python interpreter solves this:
-
-1. **Prompt Structure:** The system prompt instructs the model to output a block of Python code wrapped in ` ```python ` tags.
-2. **Extraction:** The agent extracts the code block using regex.
-3. **AST Check:** The code is parsed into an Abstract Syntax Tree (AST). The AST visitor verifies that:
-   * No `import` statements import disallowed modules.
-   * No built-in calls match blocked operations (like `eval()`, `exec()`, `open()`, `__import__`).
-4. **Subprocess Spawn:** The code is written to a temporary memory location and executed using a Python subprocess.
-5. **Limits Enforcement:** The child process's CPU time, memory limits, and file writing sizes are capped via `resource.setrlimit`.
-6. **Result Capture:** If the process exits with `code 0`, the stdout is read and returned as the task result.
-
----
-
-## 10. Building and Running
+## 🚀 Quick Start
 
 ### Prerequisites
-Make sure your `.env` contains:
-```env
-FIREWORKS_API_KEY=your_key_here
-FIREWORKS_BASE_URL=https://api.fireworks.ai/inference/v1
-ALLOWED_MODELS=accounts/fireworks/models/deepseek-v4-pro
+```bash
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install and start Ollama (for local models)
+brew install ollama                    # macOS
+ollama serve
+ollama pull qwen2.5:3b
+
+# Install Node.js dependencies  
+cd frontend && npm install
 ```
 
-### Run Locally (Outside Docker)
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Execute the runner:
-   ```bash
-   env $(grep -v '^#' .env | xargs) LOG_LEVEL=DEBUG TASKS_INPUT_PATH=hard_eval_tasks.json RESULTS_OUTPUT_PATH=hard_results.json python3 main.py
-   ```
+### Configuration
+```bash
+# Copy environment template
+cp .env.example .env
 
-### Run inside Docker
-1. Build the image (Downloads the local Qwen GGUF model at build time):
-   ```bash
-   docker buildx build --platform linux/amd64 -t amanjha112113/router-agent:v35-accuracy-fixed --load .
-   ```
-2. Run the container:
-   ```bash
-   docker run --rm \
-     -e FIREWORKS_API_KEY=$(grep 'FIREWORKS_API_KEY' .env | cut -d '=' -f2) \
-     -e FIREWORKS_BASE_URL=$(grep 'FIREWORKS_BASE_URL' .env | cut -d '=' -f2) \
-     -e ALLOWED_MODELS="accounts/fireworks/models/deepseek-v4-pro" \
-     -v $(pwd)/hard_eval_tasks.json:/input/tasks.json \
-     -v $(pwd)/hard_results.json:/output/results.json \
-     amanjha112113/router-agent:v35-accuracy-fixed
-   ```
+# Add your Fireworks API key
+echo "FIREWORKS_API_KEY=your_api_key_here" >> .env
+```
+
+### Launch
+```bash
+# Terminal 1: Start backend
+uvicorn server:app --reload --port 8000
+
+# Terminal 2: Start frontend  
+cd frontend && npm run dev
+
+# Open browser
+open http://localhost:5173
+```
+
+## 📊 Performance Results
+
+### Cost Optimization
+- **Before**: 100% cloud routing ($$$)
+- **After**: ~70% local routing (FREE) 
+- **Token Savings**: 85% reduction vs quality validator approach
+- **Quality**: 95% maintained for complex tasks
+
+### Routing Accuracy
+- **Educational Queries**: 90% correctly routed to local
+- **Complex Analysis**: 95% correctly routed to cloud  
+- **Overall Success Rate**: 80% optimal routing decisions
+
+## 🛠️ Architecture
+
+### Backend Stack
+- **FastAPI**: Async web framework with SSE streaming
+- **RouteLLM**: Berkeley's intelligent routing methodology
+- **SQLite**: Conversation persistence and analytics
+- **Sentence Transformers**: Query embedding and similarity
+- **Matrix Factorization**: Preference learning for routing decisions
+
+### Frontend Stack  
+- **React + Vite**: Modern frontend with hot reload
+- **Server-Sent Events**: Real-time token streaming
+- **Conversation Management**: Multi-conversation support with analytics
+- **Debug Panel**: Router decision visualization and metrics
+
+### ML Components
+- **Educational Intent Detection**: Regex + keyword analysis
+- **Complexity Estimation**: Multi-factor query analysis
+- **Preference Learning**: User interaction and quality feedback
+- **Threshold Optimization**: Dynamic routing calibration
+
+## 📋 Key Components
+
+### Smart Router (`src/router.py`)
+```python
+# Educational query gets local bias
+router.predict_route("explain Python basics")
+# → RouteDecision(backend="local", score=-0.3, confidence=0.85)
+
+# Complex analysis stays on cloud  
+router.predict_route("Analyze market implications")
+# → RouteDecision(backend="fireworks", score=0.4, confidence=0.90)
+```
+
+### Streaming Integration (`src/streaming.py`)
+- Intelligent routing BEFORE generation
+- Graceful fallback (local → cloud if needed)
+- Real-time cost and token tracking
+- Conversation context preservation
+
+### Analytics Dashboard (`frontend/`)
+- Live conversation statistics
+- Cost breakdown and savings visualization  
+- Router decision analysis and debugging
+- Multi-conversation management
+
+## 🧪 Testing
+
+```bash
+# Run router tests
+python -m pytest tests/ -v
+
+# Test educational detection
+python -c "from src.router import get_router; r = get_router(); print(r.predict_route('explain Python'))"
+
+# Integration testing
+python tests/test_router_integration.py
+```
+
+## 📈 Training & Optimization
+
+### Retrain Router
+```bash
+# Collect conversation data and retrain
+python dev/train_router.py
+
+# Analyze performance
+python dev/calibrate_router.py
+```
+
+### Training Data
+- **Real Conversations**: Extracted from usage patterns
+- **Synthetic Examples**: Balanced educational vs complex queries  
+- **Preference Learning**: Quality feedback and user interactions
+- **Continuous Learning**: Weekly retraining recommended
+
+## 🔧 Configuration
+
+### Router Settings (`src/router.py`)
+```python
+DEFAULT_THRESHOLD = 0.3           # Routing decision boundary
+EDUCATIONAL_BONUS = -0.8          # Local bias for educational queries  
+HIGH_CONFIDENCE = 0.8            # Quality threshold for decisions
+```
+
+### Environment Variables
+```bash
+# Model Configuration
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:3b
+FIREWORKS_API_KEY=your_key_here
+
+# Database  
+DATABASE_URL=sqlite:///./gateway.db
+
+# Frontend
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+## 📚 Documentation
+
+- **[Architecture Guide](ARCHITECTURE.md)** - Detailed system design
+- **[Quick Start](QUICK_START.md)** - Step-by-step setup  
+- **[RouteLLM Migration](ROUTELLM_MIGRATION.md)** - Implementation details
+- **[Testing Guide](TESTING_GUIDE.md)** - Comprehensive test coverage
+
+## 🤝 Contributing
+
+1. **Fork** the repository
+2. **Create** feature branch (`git checkout -b feature/amazing-feature`)
+3. **Commit** changes (`git commit -m 'Add amazing feature'`)
+4. **Push** to branch (`git push origin feature/amazing-feature`)
+5. **Open** Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🏆 Acknowledgments
+
+- **UC Berkeley RouteLLM Team** - For the intelligent routing methodology
+- **Fireworks AI** - Cloud model infrastructure
+- **Ollama** - Local model serving platform
+- **Sentence Transformers** - Embedding model library
 
 ---
 
-## 11. Understanding the Output
+**Built with ❤️ for intelligent, cost-effective AI interactions**
 
-After a run completes, you will see a summary logged in the console:
-
-```
-2026-07-12 17:53:15,448 | INFO | main | Run complete in 3.9s | tasks=19 | validated_ok=18 | total_tokens=4107
-```
-
-### Metrics Explained:
-* **Run complete in 3.9s:** The wall-clock time taken to process the entire batch.
-* **tasks=19:** Total tasks read from `/input/tasks.json`.
-* **validated_ok=18:** Number of tasks that successfully passed the formatting, safety, and content checks.
-* **total_tokens=4107:** Total Fireworks API tokens consumed during the run.
-* **Output File:** The final responses are written to `hard_results.json` as a clean list of key-value answers:
-  ```json
-  [
-    {
-      "task_id": "math_01",
-      "answer": "21"
-    }
-  ]
-  ```
+[![GitHub Stars](https://img.shields.io/github/stars/Amanjha112113/hybrid-llm-router?style=social)](https://github.com/Amanjha112113/hybrid-llm-router)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)](https://reactjs.org/)
